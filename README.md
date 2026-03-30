@@ -3,6 +3,8 @@
 A C++ experimental application for long-range marine routing (3000-5000 km+).
 The code loads world land polygons from GeoJSON and computes sea routes using triangulation plus triangle-channel search.
 
+![Planned route preview](doc/images/planned-route-marmara.png)
+
 ## Setup and Run
 
 1. Download the dataset:
