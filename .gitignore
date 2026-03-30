@@ -1,0 +1,6 @@
+build/
+.cache/
+cache/
+output/
+.tmp_osm_land/
+.venv_osm/
