@@ -24,6 +24,7 @@
 #include <QPlainTextEdit>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QTimer>
 #include <QRubberBand>
 #include <QScrollArea>
 #include <QShortcut>
@@ -344,7 +345,8 @@ private:
 
 class ViewerWindow : public QWidget {
 public:
-    ViewerWindow() {
+    explicit ViewerWindow(QString startup_screenshot_path = QString())
+        : startup_screenshot_path_(std::move(startup_screenshot_path)) {
         setWindowFlags(windowFlags() | Qt::Window | Qt::WindowMinMaxButtonsHint | Qt::WindowFullscreenButtonHint);
         setWindowTitle("VGPathPlanning World Layers Desktop");
         resize(1600, 920);
@@ -1110,6 +1112,8 @@ private:
             status += "Uyari:\n" + QString::fromStdString(result.warning_message);
         }
         status_box_->setPlainText(status);
+
+        maybeCaptureStartupScreenshot();
     }
 
     void beginPickMode(PickMode mode) {
@@ -1929,6 +1933,30 @@ private:
         status_box_->setPlainText(current.isEmpty() ? line : (current + "\n" + line));
     }
 
+    void maybeCaptureStartupScreenshot() {
+        if (startup_screenshot_path_.isEmpty() || startup_screenshot_done_) {
+            return;
+        }
+
+        startup_screenshot_done_ = true;
+        const QString screenshot_path = startup_screenshot_path_;
+        QTimer::singleShot(250, this, [this, screenshot_path]() {
+            std::error_code ec;
+            const std::filesystem::path output_path(screenshot_path.toStdString());
+            if (output_path.has_parent_path()) {
+                std::filesystem::create_directories(output_path.parent_path(), ec);
+            }
+
+            const bool ok = grab().save(screenshot_path);
+            if (!ok) {
+                appendStatus("UI screenshot kaydedilemedi: " + screenshot_path);
+            } else {
+                appendStatus("UI screenshot kaydedildi: " + screenshot_path);
+            }
+            QTimer::singleShot(50, qApp, [ok]() { QCoreApplication::exit(ok ? 0 : 1); });
+        });
+    }
+
     QComboBox* dataset_combo_ = nullptr;
     QComboBox* buffer_dataset_combo_ = nullptr;
     QLineEdit* land_path_edit_ = nullptr;
@@ -1984,6 +2012,8 @@ private:
     QString route_cache_path_;
     QString current_render_land_dataset_;
     QString current_render_bathymetry_dataset_;
+    QString startup_screenshot_path_;
+    bool startup_screenshot_done_ = false;
     PickMode pick_mode_ = PickMode::None;
     RenderTaskResult current_geo_transform_;
 };
@@ -1992,7 +2022,22 @@ private:
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
-    ViewerWindow window;
+
+    QString startup_screenshot_path;
+    for (int i = 1; i < argc; ++i) {
+        const QString arg = QString::fromLocal8Bit(argv[i]);
+        if (arg == "--screenshot") {
+            if (i + 1 >= argc) {
+                qCritical("Missing value for --screenshot");
+                return 1;
+            }
+            startup_screenshot_path = QString::fromLocal8Bit(argv[++i]);
+            continue;
+        }
+        qWarning("Unknown argument: %s", argv[i]);
+    }
+
+    ViewerWindow window(startup_screenshot_path);
     window.show();
     return app.exec();
 }
