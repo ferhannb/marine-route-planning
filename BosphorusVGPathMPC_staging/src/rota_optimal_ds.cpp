@@ -220,9 +220,13 @@ void MPCNumericClothoidCost::build_solver() {
 
   ds_prev_p_ = opti_.parameter();
   term_scale_p_ = opti_.parameter();
+  stage_track_weight_p_ = opti_.parameter();
   w_wp_p_ = opti_.parameter();
   xwp_p_ = opti_.parameter();
   ywp_p_ = opti_.parameter();
+  xref_p_ = opti_.parameter(1, N + 1);
+  yref_p_ = opti_.parameter(1, N + 1);
+  psiref_p_ = opti_.parameter(1, N + 1);
 
   opti_.subject_to(X_(0, 0) == x0_p_);
   opti_.subject_to(X_(1, 0) == y0_p_);
@@ -261,10 +265,20 @@ void MPCNumericClothoidCost::build_solver() {
 
   for (int k = 0; k < N; ++k) {
     const MX ds_k = ds_(0, k);
-    const MX K1 = K_next_fixed_ramp(X_(3, k), Kcmd_(0, k), ds_k, cfg_.K_MAX, cfg_.S_MAX);
     MX x1, y1, psi1;
-    std::tie(x1, y1, psi1) =
-        clothoid_increment_numeric(X_(0, k), X_(1, k), X_(2, k), X_(3, k), K1, ds_k, cfg_.nseg);
+    MX K1;
+    if (cfg_.direct_curvature_mode) {
+      K1 = Kcmd_(0, k);
+      const MX dpsi = K1 * ds_k;
+      const MX fac = sinc(dpsi / 2.0);
+      x1 = X_(0, k) + ds_k * fac * cos(X_(2, k) + dpsi / 2.0);
+      y1 = X_(1, k) + ds_k * fac * sin(X_(2, k) + dpsi / 2.0);
+      psi1 = X_(2, k) + dpsi;
+    } else {
+      K1 = K_next_fixed_ramp(X_(3, k), Kcmd_(0, k), ds_k, cfg_.K_MAX, cfg_.S_MAX);
+      std::tie(x1, y1, psi1) =
+          clothoid_increment_numeric(X_(0, k), X_(1, k), X_(2, k), X_(3, k), K1, ds_k, cfg_.nseg);
+    }
     opti_.subject_to(X_(3, k + 1) == K1);
     opti_.subject_to(X_(0, k + 1) == x1);
     opti_.subject_to(X_(1, k + 1) == y1);
@@ -273,11 +287,16 @@ void MPCNumericClothoidCost::build_solver() {
 
   MX obj = 0;
   for (int k = 0; k < N; ++k) {
-    obj += cfg_.w_K * (X_(3, k) * X_(3, k));
-    obj += cfg_.w_Kcmd * (Kcmd_(0, k) * Kcmd_(0, k));
-    if (k > 0) {
-      obj += cfg_.w_dKcmd * ((Kcmd_(0, k) - Kcmd_(0, k - 1)) * (Kcmd_(0, k) - Kcmd_(0, k - 1)));
-      obj += cfg_.w_ds_smooth * ((ds_(0, k) - ds_(0, k - 1)) * (ds_(0, k) - ds_(0, k - 1)));
+    const MX pos_ref_e = (X_(0, k) - xref_p_(0, k)) * (X_(0, k) - xref_p_(0, k)) +
+                         (X_(1, k) - yref_p_(0, k)) * (X_(1, k) - yref_p_(0, k));
+    const MX psi_ref_e = wrap_to_pi(X_(2, k) - psiref_p_(0, k));
+    obj += stage_track_weight_p_ * (cfg_.w_pos * pos_ref_e);
+    obj += stage_track_weight_p_ * (cfg_.w_psi * (psi_ref_e * psi_ref_e));
+    obj += cfg_.w_ds_total * ds_(0, k);
+    obj += cfg_.w_K_mag * (Kcmd_(0, k) * Kcmd_(0, k));
+    if (k < N - 1) {
+      obj += cfg_.w_dKcmd * ((Kcmd_(0, k + 1) - Kcmd_(0, k)) * (Kcmd_(0, k + 1) - Kcmd_(0, k)));
+      obj += cfg_.w_ds_smooth * ((ds_(0, k + 1) - ds_(0, k)) * (ds_(0, k + 1) - ds_(0, k)));
     }
   }
 
@@ -342,7 +361,9 @@ void MPCNumericClothoidCost::set_params(
     double psihit,
     double Khit,
     double hit_scale,
-    double ds_prev) {
+    double ds_prev,
+    const std::vector<State4>* stage_refs,
+    double stage_track_weight) {
   opti_.set_value(x0_p_, x0);
   opti_.set_value(y0_p_, y0);
   opti_.set_value(psi0_p_, psi0);
@@ -361,9 +382,25 @@ void MPCNumericClothoidCost::set_params(
 
   opti_.set_value(ds_prev_p_, ds_prev);
   opti_.set_value(term_scale_p_, term_scale);
+  opti_.set_value(stage_track_weight_p_, stage_track_weight);
   opti_.set_value(w_wp_p_, w_wp);
   opti_.set_value(xwp_p_, xwp);
   opti_.set_value(ywp_p_, ywp);
+
+  std::vector<double> xref(cfg_.N + 1, xg);
+  std::vector<double> yref(cfg_.N + 1, yg);
+  std::vector<double> psiref(cfg_.N + 1, psig);
+  if (stage_refs != nullptr && !stage_refs->empty()) {
+    for (int k = 0; k <= cfg_.N; ++k) {
+      const auto& ref = (*stage_refs)[std::min(k, static_cast<int>(stage_refs->size()) - 1)];
+      xref[k] = ref.x;
+      yref[k] = ref.y;
+      psiref[k] = ref.psi;
+    }
+  }
+  opti_.set_value(xref_p_, DM(std::vector<std::vector<double>>{xref}));
+  opti_.set_value(yref_p_, DM(std::vector<std::vector<double>>{yref}));
+  opti_.set_value(psiref_p_, DM(std::vector<std::vector<double>>{psiref}));
 }
 
 void MPCNumericClothoidCost::warm_start(
@@ -402,9 +439,15 @@ void MPCNumericClothoidCost::warm_start(
   K_ws[0] = K0;
 
   for (int k = 0; k < cfg_.N; ++k) {
-    K_ws[k + 1] = K_next_fixed_ramp_np(K_ws[k], Kcmd_ws[k], ds_ws[k], cfg_.K_MAX, cfg_.S_MAX);
-    std::tie(x_ws[k + 1], y_ws[k + 1], psi_ws[k + 1]) =
-        clothoid_increment_numeric_np(x_ws[k], y_ws[k], psi_ws[k], K_ws[k], K_ws[k + 1], ds_ws[k], cfg_.nseg);
+    if (cfg_.direct_curvature_mode) {
+      K_ws[k + 1] = Kcmd_ws[k];
+      std::tie(x_ws[k + 1], y_ws[k + 1], psi_ws[k + 1]) =
+          step_constK_sinc_np(x_ws[k], y_ws[k], psi_ws[k], K_ws[k + 1], ds_ws[k]);
+    } else {
+      K_ws[k + 1] = K_next_fixed_ramp_np(K_ws[k], Kcmd_ws[k], ds_ws[k], cfg_.K_MAX, cfg_.S_MAX);
+      std::tie(x_ws[k + 1], y_ws[k + 1], psi_ws[k + 1]) =
+          clothoid_increment_numeric_np(x_ws[k], y_ws[k], psi_ws[k], K_ws[k], K_ws[k + 1], ds_ws[k], cfg_.nseg);
+    }
   }
 
   for (int k = 0; k < cfg_.N; ++k) {
@@ -517,7 +560,9 @@ MPCSolution MPCNumericClothoidCost::solve(
     std::optional<double> Khit,
     std::optional<double> ds_prev,
     std::optional<double> ds_seed,
-    bool use_last_warm) {
+    bool use_last_warm,
+    const std::vector<State4>* stage_refs,
+    double stage_track_weight) {
   const double xwp_v = xwp.has_value() ? *xwp : xg;
   const double ywp_v = ywp.has_value() ? *ywp : yg;
   const double xhit_v = xhit.has_value() ? *xhit : xg;
@@ -544,7 +589,9 @@ MPCSolution MPCNumericClothoidCost::solve(
       psihit_v,
       Khit_v,
       hit_scale,
-      ds_prev_v);
+      ds_prev_v,
+      stage_refs,
+      stage_track_weight);
 
   apply_warm_start(x0, y0, psi0, K0, xg, yg, use_last_warm, ds_seed);
 
@@ -608,7 +655,9 @@ StepOutput MPCNumericClothoidCost::mpc_step(
     std::optional<double> yhit,
     std::optional<double> psihit,
     std::optional<double> Khit,
-    std::optional<double> ds_seed) {
+    std::optional<double> ds_seed,
+    const std::vector<State4>* stage_refs,
+    double stage_track_weight) {
   auto sol = solve(
       state.x,
       state.y,
@@ -629,14 +678,20 @@ StepOutput MPCNumericClothoidCost::mpc_step(
       Khit,
       last_ds_applied_,
       ds_seed,
-      true);
+      true,
+      stage_refs,
+      stage_track_weight);
 
   const double ds0 = sol.ds.front();
-  const double K1 = sol.X[x_index(3, 1)];
+  const double K1 = cfg_.direct_curvature_mode ? sol.Kcmd.front() : sol.X[x_index(3, 1)];
 
   double x1, y1, psi1;
-  std::tie(x1, y1, psi1) =
-      clothoid_increment_numeric_np(state.x, state.y, state.psi, state.K, K1, ds0, cfg_.nseg);
+  if (cfg_.direct_curvature_mode) {
+    std::tie(x1, y1, psi1) = step_constK_sinc_np(state.x, state.y, state.psi, K1, ds0);
+  } else {
+    std::tie(x1, y1, psi1) =
+        clothoid_increment_numeric_np(state.x, state.y, state.psi, state.K, K1, ds0, cfg_.nseg);
+  }
   last_ds_applied_ = ds0;
 
   shift_solution(sol);

@@ -197,13 +197,13 @@ bool loadLandForPlannerCache(const planner::PlannerCacheData& cache,
 
     const std::string resolved_land_dataset = worldlayers::resolveInputPath(cache.dataset_path);
     if (resolved_land_dataset.empty()) {
-        error_message = "Cache icinde land dataset bilgisi yok.";
+        error_message = "No land dataset information found in the cache.";
         return false;
     }
 
     if (!planner::loadLandPolygonsGeoJson(resolved_land_dataset, out_land) &&
         !planner::loadLandPolygons(resolved_land_dataset, out_land)) {
-        error_message = "Land dataset yuklenemedi.";
+        error_message = "Failed to load land dataset.";
         return false;
     }
     return true;
@@ -220,7 +220,7 @@ bool loadBathymetryForPlannerCache(const planner::PlannerCacheData& cache,
 
     if (!planner::loadBathymetryFeaturesGeoJson(resolved_bathymetry_dataset, out_bathymetry) &&
         !planner::loadBathymetryFeatures(resolved_bathymetry_dataset, out_bathymetry)) {
-        error_message = "Bathymetry dataset yuklenemedi.";
+        error_message = "Failed to load bathymetry dataset.";
         return false;
     }
     return true;
@@ -473,7 +473,8 @@ private:
         dataset_tab_layout->addWidget(title);
 
         auto* subtitle =
-            new QLabel("Dunya kara poligonlari, TSS ve bathymetry katmanlarini yukle, SVG uret ve onizle.", dataset_tab);
+            new QLabel("Load world land polygons, TSS, and bathymetry layers, render SVG, and preview the result.",
+                       dataset_tab);
         subtitle->setWordWrap(true);
         dataset_tab_layout->addWidget(subtitle);
 
@@ -522,7 +523,7 @@ private:
         buffer_layout->addWidget(buffer_dataset_combo_);
         buffer_layout->addLayout(makePathRow("Buffer GeoJSON", buffer_dataset_path_edit_, buffer_dataset_browse_button_));
         auto* buffer_note = new QLabel(
-            "Offset katmani hazir 50m / 100m / 150m / 200m buffer datasetlerinden secilir. Runtime buffer hesaplanmaz.",
+            "The offset layer is selected from prebuilt 50m / 100m / 150m / 200m buffer datasets. Runtime buffering is not computed.",
             buffer_box);
         buffer_note->setWordWrap(true);
         buffer_layout->addWidget(buffer_note);
@@ -560,7 +561,7 @@ private:
         button_row->addWidget(fit_button_);
         dataset_tab_layout->addLayout(button_row);
 
-        loading_label_ = new QLabel("Hazir", dataset_tab);
+        loading_label_ = new QLabel("Ready", dataset_tab);
         loading_progress_ = new QProgressBar(dataset_tab);
         loading_progress_->setRange(0, 0);
         loading_progress_->setVisible(false);
@@ -573,7 +574,7 @@ private:
         dataset_tab_layout->addWidget(status_box_, 1);
 
         auto* help =
-            new QLabel("Mouse wheel: zoom | Mouse drag: pan | Ctrl + Left Drag: alan secip zoom\nSag tik: bir onceki zoom seviyesi",
+            new QLabel("Mouse wheel: zoom | Mouse drag: pan | Ctrl + Left Drag: box zoom\nRight click: previous zoom level",
                        dataset_tab);
         help->setWordWrap(true);
         dataset_tab_layout->addWidget(help);
@@ -591,7 +592,7 @@ private:
         route_layout->addWidget(route_title);
 
         auto* route_subtitle =
-            new QLabel("Baslangic ve hedef koordinatlarini gir. Bu sekme rota planlama girdilerini hazirlar.",
+            new QLabel("Enter the start and goal coordinates. This tab prepares route-planning inputs.",
                        route_tab);
         route_subtitle->setWordWrap(true);
         route_layout->addWidget(route_subtitle);
@@ -613,13 +614,13 @@ private:
         route_layout->addWidget(goal_box);
 
         auto* route_note =
-            new QLabel("Haritada tiklayarak start ve goal secmek icin once Dataset sekmesinde Render yap, sonra asagidaki pick butonlarini kullan.",
+            new QLabel("To pick the start and goal on the map, first render a layer map in the Dataset tab, then use the pick buttons below.",
                        route_tab);
         route_note->setWordWrap(true);
         route_layout->addWidget(route_note);
         route_tss_checkbox_ = new QCheckBox("Use TSS-guided routing", route_tab);
         route_tss_checkbox_->setChecked(true);
-        route_tss_checkbox_->setToolTip("Kapaliysa rota klasik mesh kisayolu ile hesaplanir.");
+        route_tss_checkbox_->setToolTip("If disabled, the route is computed with the classic mesh shortcut.");
         route_layout->addWidget(route_tss_checkbox_);
         auto* route_pick_row = new QHBoxLayout();
         pick_start_button_ = new QPushButton("Pick Start on Map", route_tab);
@@ -826,14 +827,14 @@ private:
             route_goal_lat_spin_->setValue(40.965000);
             route_goal_lon_spin_->setValue(28.995000);
             refreshRouteMarkers();
-            appendStatus("Route preset uygulandi: Bosphorus start/goal.");
+            appendStatus("Route preset applied: Bosphorus start/goal.");
         }
     }
 
     void browseOpenFile(QLineEdit* target) {
         const QString file_name = QFileDialog::getOpenFileName(
             this,
-            "Veri dosyasi sec",
+            "Select data file",
             target->text(),
             "Supported (*.geojson *.json *.shp *.asc *.ascii);;All files (*)");
         if (!file_name.isEmpty()) {
@@ -849,7 +850,7 @@ private:
     void browseOpenSvgFile(QLineEdit* target) {
         const QString file_name = QFileDialog::getOpenFileName(
             this,
-            "SVG sec",
+            "Select SVG",
             target->text(),
             "SVG (*.svg);;All files (*)");
         if (!file_name.isEmpty()) {
@@ -860,7 +861,7 @@ private:
     void browseOpenCacheFile(QLineEdit* target) {
         const QString file_name = QFileDialog::getOpenFileName(
             this,
-            "Triangulation cache sec",
+            "Select triangulation cache",
             target->text(),
             "Planner Cache (*.bin);;All files (*)");
         if (!file_name.isEmpty()) {
@@ -871,7 +872,7 @@ private:
     void browseSaveFile(QLineEdit* target) {
         const QString file_name = QFileDialog::getSaveFileName(
             this,
-            "SVG cikti dosyasi",
+            "SVG output file",
             target->text(),
             "SVG (*.svg)");
         if (!file_name.isEmpty()) {
@@ -927,13 +928,13 @@ private:
         const QString cache_path = currentRouteCachePath();
         if (cache_path.isEmpty()) {
             if (show_message_on_failure) {
-                QMessageBox::warning(this, "Eksik dosya", "Route planning icin kullanilacak cache yolu belirlenemedi.");
+                QMessageBox::warning(this, "Missing file", "The cache path for route planning could not be determined.");
             }
             return false;
         }
         if (!QFileInfo::exists(cache_path)) {
             if (show_message_on_failure) {
-                QMessageBox::warning(this, "Dosya yok", "Land + Mesh SVG icin uygun triangulation cache bulunamadi.");
+                QMessageBox::warning(this, "File not found", "No suitable triangulation cache was found for Land + Mesh SVG.");
             }
             return false;
         }
@@ -941,7 +942,7 @@ private:
         planner::PlannerCacheData cache;
         if (!planner::loadPlannerCache(cache_path.toStdString(), cache)) {
             if (show_message_on_failure) {
-                QMessageBox::warning(this, "Cache hatasi", "Triangulation cache okunamadi.");
+                QMessageBox::warning(this, "Cache error", "Failed to read triangulation cache.");
             }
             return false;
         }
@@ -955,9 +956,9 @@ private:
         if (!has_embedded_land && !resolved_land.isEmpty() && land_path_edit_->text().trimmed() != resolved_land) {
             setDatasetPathFromResolved(resolved_land);
             changed = true;
-            appendStatus("Cache dataset senkronu: land dataset guncellendi -> " + resolved_land);
+            appendStatus("Cache dataset sync: land dataset updated -> " + resolved_land);
         } else if (has_embedded_land) {
-            appendStatus("Cache dataset senkronu: detayli land polygonlari cache icinden kullanilacak.");
+            appendStatus("Cache dataset sync: detailed land polygons will be used from the cache.");
         }
 
         if (!cache.bathymetry_path.empty()) {
@@ -968,17 +969,17 @@ private:
             if (bathymetry_path_edit_->text().trimmed() != resolved_bathymetry) {
                 bathymetry_path_edit_->setText(resolved_bathymetry);
                 changed = true;
-                appendStatus("Cache dataset senkronu: bathymetry dataset guncellendi -> " + resolved_bathymetry);
+                appendStatus("Cache dataset sync: bathymetry dataset updated -> " + resolved_bathymetry);
             }
         }
 
         if (changed && !current_render_land_dataset_.isEmpty() && current_render_land_dataset_ != resolved_land) {
-            appendStatus("Uyari: mevcut harita onizlemesi cache ile ayni land dataset'ten gelmiyor. Tekrar Render yap.");
+            appendStatus("Warning: current map preview does not come from the same land dataset as the cache. Render again.");
         }
         if (changed && !resolved_bathymetry.isEmpty() &&
             !current_render_bathymetry_dataset_.isEmpty() &&
             current_render_bathymetry_dataset_ != resolved_bathymetry) {
-            appendStatus("Uyari: mevcut harita onizlemesi cache ile ayni bathymetry dataset'ten gelmiyor. Tekrar Render yap.");
+            appendStatus("Warning: current map preview does not come from the same bathymetry dataset as the cache. Render again.");
         }
         return true;
     }
@@ -1010,20 +1011,20 @@ private:
 
         const auto cfg = gatherConfig();
         if (cfg.land_geojson.empty()) {
-            QMessageBox::warning(this, "Eksik veri", "Land GeoJSON yolu bos olamaz.");
+            QMessageBox::warning(this, "Missing data", "Land GeoJSON path cannot be empty.");
             return;
         }
         if (cfg.bounds.enabled &&
             (cfg.bounds.min_lat >= cfg.bounds.max_lat || cfg.bounds.min_lon >= cfg.bounds.max_lon)) {
-            QMessageBox::warning(this, "Gecersiz viewport", "Min/max viewport degerlerini kontrol et.");
+            QMessageBox::warning(this, "Invalid viewport", "Check the min/max viewport values.");
             return;
         }
         if (cfg.enable_buffer_zones && cfg.buffer_zones_geojson.empty()) {
-            QMessageBox::warning(this, "Eksik dataset", "Offset dataset secin.");
+            QMessageBox::warning(this, "Missing dataset", "Select an offset dataset.");
             return;
         }
-        setRenderBusy(true, "Harita yukleniyor ve SVG uretiliyor...");
-        appendStatus("Yukleme basladi...");
+        setRenderBusy(true, "Loading map and generating SVG...");
+        appendStatus("Loading started...");
 
         render_watcher_.setFuture(QtConcurrent::run([cfg]() {
             RenderTaskResult result;
@@ -1057,12 +1058,12 @@ private:
     }
 
     void handleRenderFinished() {
-        setRenderBusy(false, "Hazir");
+        setRenderBusy(false, "Ready");
         const RenderTaskResult result = render_watcher_.result();
         if (!result.success) {
             const QString error = QString::fromStdString(result.error_message);
-            QMessageBox::critical(this, "Yukleme hatasi", error);
-            appendStatus("Hata: " + error);
+            QMessageBox::critical(this, "Load error", error);
+            appendStatus("Error: " + error);
             return;
         }
 
@@ -1076,19 +1077,19 @@ private:
         loadPreview(current_svg_path_);
 
         QString status;
-        status += "Render tamamlandi.\n";
+        status += "Render completed.\n";
         status += "Land dataset: " + QString::fromStdString(result.config.land_geojson) + "\n";
         status += "TSS dataset: " +
-                  QString::fromStdString(result.config.tss_geojson.empty() ? "devre disi" : result.config.tss_geojson) +
+                  QString::fromStdString(result.config.tss_geojson.empty() ? "disabled" : result.config.tss_geojson) +
                   "\n";
         status += "Bathymetry dataset: " +
-                  QString::fromStdString(result.config.bathymetry_geojson.empty() ? "devre disi"
+                  QString::fromStdString(result.config.bathymetry_geojson.empty() ? "disabled"
                                                                                   : result.config.bathymetry_geojson) +
                   "\n";
         if (result.config.enable_buffer_zones) {
             status += "Coast offset dataset: " + QString::fromStdString(result.config.buffer_zones_geojson) + "\n";
         } else {
-            status += "Coast offset zones: devre disi\n";
+            status += "Coast offset zones: disabled\n";
         }
         if (result.config.bounds.enabled) {
             status += QString("Viewport lat:[%1, %2] lon:[%3, %4]\n")
@@ -1097,7 +1098,7 @@ private:
                           .arg(result.config.bounds.min_lon)
                           .arg(result.config.bounds.max_lon);
         } else {
-            status += "Viewport: tum yuklu katmanlar\n";
+            status += "Viewport: all loaded layers\n";
         }
         status += QString("Land polygon: %1\n").arg(result.summary.land_polygon_count);
         status += QString("TSS feature: %1\n").arg(result.summary.tss_feature_count);
@@ -1106,10 +1107,10 @@ private:
         status += "SVG output: " + QString::fromStdString(result.resolved_svg_path) + "\n";
         if (current_svg_path_ != QString::fromStdString(result.resolved_svg_path)) {
             status += "Preview SVG: " + current_svg_path_ + "\n";
-            status += "Preview mode: meshli gorsellestirme\n";
+            status += "Preview mode: mesh visualization\n";
         }
         if (!result.warning_message.empty()) {
-            status += "Uyari:\n" + QString::fromStdString(result.warning_message);
+            status += "Warning:\n" + QString::fromStdString(result.warning_message);
         }
         status_box_->setPlainText(status);
 
@@ -1119,18 +1120,18 @@ private:
     void beginPickMode(PickMode mode) {
         if (!current_geo_transform_.has_geo_transform) {
             QMessageBox::warning(this,
-                                 "Geo referans yok",
-                                 "Haritadan nokta secmek icin once Dataset sekmesinde Render ile bir katman haritasi uret.");
+                                 "No georeference",
+                                 "To pick a point on the map, first render a layer map in the Dataset tab.");
             return;
         }
         pick_mode_ = mode;
         preview_view_->setPointPickEnabled(true);
         if (pick_mode_ == PickMode::Start) {
             pick_status_label_->setText("Pick mode: start");
-            appendStatus("Pick mode aktif: haritadan start noktasi sec.");
+            appendStatus("Pick mode active: select the start point on the map.");
         } else if (pick_mode_ == PickMode::Goal) {
             pick_status_label_->setText("Pick mode: goal");
-            appendStatus("Pick mode aktif: haritadan goal noktasi sec.");
+            appendStatus("Pick mode active: select the goal point on the map.");
         }
     }
 
@@ -1235,18 +1236,18 @@ private:
 
         const QString cache_path = currentRouteCachePath();
         if (cache_path.isEmpty()) {
-            QMessageBox::warning(this, "Eksik dosya", "Route planning icin triangulation cache gerekli.");
+            QMessageBox::warning(this, "Missing file", "Triangulation cache is required for route planning.");
             return;
         }
         if (!QFileInfo::exists(cache_path)) {
-            QMessageBox::warning(this, "Dosya yok", "Triangulation cache bulunamadi.");
+            QMessageBox::warning(this, "File not found", "Triangulation cache not found.");
             return;
         }
 
         clearPickMode();
         clearRouteOverlay();
-        setRenderBusy(true, "Route planning calisiyor...");
-        appendStatus("Route planning arka planda basladi...");
+        setRenderBusy(true, "Route planning in progress...");
+        appendStatus("Route planning started in background...");
 
         const planner::LatLon requested_start{route_start_lat_spin_->value(), route_start_lon_spin_->value()};
         const planner::LatLon requested_goal{route_goal_lat_spin_->value(), route_goal_lon_spin_->value()};
@@ -1259,7 +1260,7 @@ private:
             traffic_cfg.hard_tss_corridor = false;
         }
 
-        appendStatus(QString("Route planning modu: %1").arg(use_tss_routing ? "TSS aktif" : "TSS kapali"));
+        appendStatus(QString("Route planning mode: %1").arg(use_tss_routing ? "TSS enabled" : "TSS disabled"));
 
         route_watcher_.setFuture(QtConcurrent::run([cache_path, requested_start, requested_goal, tss_geojson, traffic_cfg]() {
             using namespace planner;
@@ -1268,11 +1269,11 @@ private:
 
             PlannerCacheData cache;
             if (!loadPlannerCache(cache_path.toStdString(), cache)) {
-                result.error_message = "Triangulation cache okunamadi.";
+                result.error_message = "Failed to read triangulation cache.";
                 return result;
             }
             if (cache.vertices.empty() || cache.triangles.empty()) {
-                result.error_message = "Triangulation cache bos.";
+                result.error_message = "Triangulation cache is empty.";
                 return result;
             }
 
@@ -1295,7 +1296,8 @@ private:
                        p.lon_deg >= cache.min_lon && p.lon_deg <= cache.max_lon;
             };
             if (!pointInsideBounds(requested_start) || !pointInsideBounds(requested_goal)) {
-                result.error_message = "Start veya goal secili cerceve disinda. Hesaplama yalnizca mevcut mesh kapsami icinde yapilir.";
+                result.error_message =
+                    "Start or goal is outside the selected bounds. Computation only runs within the current mesh coverage.";
                 return result;
             }
 
@@ -1331,7 +1333,7 @@ private:
                     if (loadTssFeaturesGeoJson(resolved_tss, all_tss)) {
                         tss = filterTssByBounds(all_tss, cache.min_lat, cache.max_lat, cache.min_lon, cache.max_lon);
                     } else {
-                        result.warning_message = "TSS verisi okunamadi; rota klasik maliyetle hesaplandi.";
+                        result.warning_message = "Failed to read TSS data; route was computed with classic cost.";
                     }
                 }
             }
@@ -1362,7 +1364,7 @@ private:
             const auto start_ranked = rankUsableVerticesByDistance(cache.vertices, vertex_usage, result.start_geo);
             const auto goal_ranked = rankUsableVerticesByDistance(cache.vertices, vertex_usage, result.goal_geo);
             if (start_ranked.empty() || goal_ranked.empty()) {
-                result.error_message = "Mesh uzerinde kullanilabilir baslangic/varis vertex'i bulunamadi.";
+                result.error_message = "No usable start/goal vertex found on the mesh.";
                 return result;
             }
 
@@ -1460,7 +1462,7 @@ private:
             if (result.mesh_start_vertex < 0 || result.mesh_goal_vertex < 0) {
                 if (traffic_cfg.hard_tss_corridor && traffic_data.active) {
                     result.warning_message =
-                        "TSS hard corridor aktif. Secilen start/goal ayni izinli trafik koridorunda degil olabilir.";
+                        "TSS hard corridor is active. The selected start/goal may not be in the same permitted traffic corridor.";
                 }
                 return result;
             }
@@ -1525,12 +1527,12 @@ private:
     }
 
     void handleRoutePlanningFinished() {
-        setRenderBusy(false, "Hazir");
+        setRenderBusy(false, "Ready");
         const RoutePlanningTaskResult result = route_watcher_.result();
         if (!result.success) {
             clearRouteOverlay();
             QMessageBox::warning(this, "Route planning", QString::fromStdString(result.error_message));
-            appendStatus("Route planning hatasi: " + QString::fromStdString(result.error_message));
+            appendStatus("Route planning error: " + QString::fromStdString(result.error_message));
             return;
         }
 
@@ -1540,7 +1542,7 @@ private:
         route_goal_lon_spin_->setValue(result.goal_geo.lon_deg);
         refreshRouteMarkers();
         if (!result.warning_message.empty()) {
-            appendStatus("Route planning uyarisi: " + QString::fromStdString(result.warning_message));
+            appendStatus("Route planning warning: " + QString::fromStdString(result.warning_message));
         }
 
         if (!result.found) {
@@ -1548,12 +1550,12 @@ private:
             if (!result.warning_message.empty()) {
                 QMessageBox::warning(this, "Route planning", QString::fromStdString(result.warning_message));
             }
-            appendStatus("Route planning sonucu: rota bulunamadi.");
+            appendStatus("Route planning result: no route found.");
             return;
         }
 
         renderRouteOverlay(result.route_polyline);
-        appendStatus(QString("Route bulundu: %1 km, polyline nokta=%2, triangle kanal=%3%4")
+        appendStatus(QString("Route found: %1 km, polyline points=%2, triangle corridor=%3%4")
                          .arg(result.total_km, 0, 'f', 1)
                          .arg(static_cast<int>(result.route_polyline.size()))
                          .arg(static_cast<int>(result.triangle_sequence.size()))
@@ -1580,7 +1582,7 @@ private:
         const double plot_min_y = current_geo_transform_.plot_y;
         const double plot_max_y = current_geo_transform_.plot_y + current_geo_transform_.plot_h;
         if (svg_x < plot_min_x || svg_x > plot_max_x || svg_y < plot_min_y || svg_y > plot_max_y) {
-            appendStatus("Secim plot alani disinda, tekrar dene.");
+            appendStatus("Selection is outside the plot area, try again.");
             return;
         }
 
@@ -1595,12 +1597,12 @@ private:
             route_start_lat_spin_->setValue(lat);
             route_start_lon_spin_->setValue(lon);
             refreshRouteMarkers();
-            appendStatus(QString("Start secildi: lat=%1 lon=%2").arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
+            appendStatus(QString("Start selected: lat=%1 lon=%2").arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
         } else if (pick_mode_ == PickMode::Goal) {
             route_goal_lat_spin_->setValue(lat);
             route_goal_lon_spin_->setValue(lon);
             refreshRouteMarkers();
-            appendStatus(QString("Goal secildi: lat=%1 lon=%2").arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
+            appendStatus(QString("Goal selected: lat=%1 lon=%2").arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6));
         }
 
         clearPickMode();
@@ -1615,7 +1617,7 @@ private:
         const QString svg_path = navigation_svg_edit_->text().trimmed();
         const bool had_geo_transform = current_geo_transform_.has_geo_transform;
         if (svg_path.isEmpty()) {
-            QMessageBox::warning(this, "Eksik dosya", "Land + Mesh SVG yolu bos olamaz.");
+            QMessageBox::warning(this, "Missing file", "Land + Mesh SVG path cannot be empty.");
             return;
         }
 
@@ -1627,7 +1629,7 @@ private:
             std::vector<planner::LandPolygon> land;
             std::string error_message;
             if (!loadLandForPlannerCache(cache, land, error_message)) {
-                QMessageBox::warning(this, "Cache hatasi", QString::fromStdString(error_message));
+                QMessageBox::warning(this, "Cache error", QString::fromStdString(error_message));
                 return;
             }
 
@@ -1640,13 +1642,13 @@ private:
             layer_cfg.bounds.min_lon = cache.min_lon;
             layer_cfg.bounds.max_lon = cache.max_lon;
             if (!worldlayers::loadData(layer_cfg, overlay_data, error_message, error_message)) {
-                QMessageBox::warning(this, "Katman hatasi", QString::fromStdString(error_message));
+                QMessageBox::warning(this, "Layer error", QString::fromStdString(error_message));
                 return;
             }
 
             std::vector<planner::BathymetryFeature> bathymetry;
             if (!loadBathymetryForPlannerCache(cache, bathymetry, error_message)) {
-                QMessageBox::warning(this, "Cache hatasi", QString::fromStdString(error_message));
+                QMessageBox::warning(this, "Cache error", QString::fromStdString(error_message));
                 return;
             }
             bathymetry = planner::filterBathymetryByBounds(
@@ -1658,8 +1660,8 @@ private:
                 std::filesystem::create_directories(output_path.parent_path(), ec);
                 if (ec) {
                     QMessageBox::warning(this,
-                                         "SVG hatasi",
-                                         "Land + Mesh SVG klasoru olusturulamadi: " +
+                                         "SVG error",
+                                         "Failed to create the Land + Mesh SVG directory: " +
                                              QString::fromStdString(output_path.parent_path().string()));
                     return;
                 }
@@ -1680,9 +1682,9 @@ private:
             transform_data.bathymetry = bathymetry;
             transform_data.buffer_zones = overlay_data.buffer_zones;
             current_geo_transform_ = makeGeoTransformResult(transform_data);
-            appendStatus("Land + Mesh SVG cache'ten yeniden uretildi: " + svg_path);
+            appendStatus("Land + Mesh SVG regenerated from cache: " + svg_path);
         } else if (!QFileInfo::exists(svg_path)) {
-            QMessageBox::warning(this, "Dosya yok", "Land + Mesh SVG bulunamadi.");
+            QMessageBox::warning(this, "File not found", "Land + Mesh SVG not found.");
             return;
         }
 
@@ -1696,11 +1698,11 @@ private:
             applyRoutePresetForCurrentNavigationSvg(cache.min_lat, cache.max_lat, cache.min_lon, cache.max_lon);
             refreshRouteMarkers();
         }
-        appendStatus("Land + Mesh SVG yuklendi: " + current_svg_path_);
+        appendStatus("Land + Mesh SVG loaded: " + current_svg_path_);
         if (have_cache) {
-            appendStatus("Geo referans cache bounds'undan kuruldu; haritadan start/goal secimi kullanilabilir.");
+            appendStatus("Georeference was built from cache bounds; start/goal picking on the map is available.");
         } else if (had_geo_transform) {
-            appendStatus("Mevcut geo referans korundu; haritadan start/goal secimi kullanilabilir.");
+            appendStatus("Current georeference was preserved; start/goal picking on the map is available.");
         }
     }
 
@@ -1720,8 +1722,8 @@ private:
         }
         if (!current_geo_transform_.has_geo_transform) {
             QMessageBox::warning(this,
-                                 "Geo referans yok",
-                                 "Ucgen layer yuklemek icin once Dataset sekmesinde Render ile katman haritasi uret.");
+                                 "No georeference",
+                                 "To load the triangle layer, first render a layer map in the Dataset tab.");
             return;
         }
 
@@ -1730,17 +1732,17 @@ private:
                 ? triangulation_cache_edit_->text().trimmed()
                 : currentRouteCachePath();
         if (cache_path.isEmpty()) {
-            QMessageBox::warning(this, "Eksik dosya", "Triangulation cache yolu bos olamaz.");
+            QMessageBox::warning(this, "Missing file", "Triangulation cache path cannot be empty.");
             return;
         }
         if (!QFileInfo::exists(cache_path)) {
-            QMessageBox::warning(this, "Dosya yok", "Triangulation cache bulunamadi.");
+            QMessageBox::warning(this, "File not found", "Triangulation cache not found.");
             return;
         }
 
         clearPickMode();
-        setRenderBusy(true, "Triangle layer yukleniyor...");
-        appendStatus("Triangulation cache arka planda okunuyor...");
+        setRenderBusy(true, "Loading triangle layer...");
+        appendStatus("Reading triangulation cache in background...");
 
         const RenderTaskResult transform = current_geo_transform_;
         triangulation_watcher_.setFuture(QtConcurrent::run([cache_path, transform]() {
@@ -1748,11 +1750,11 @@ private:
 
             planner::PlannerCacheData cache;
             if (!planner::loadPlannerCache(cache_path.toStdString(), cache)) {
-                result.error_message = "Triangulation cache okunamadi.";
+                result.error_message = "Failed to read triangulation cache.";
                 return result;
             }
             if (cache.vertices.empty() || cache.triangles.empty()) {
-                result.error_message = "Triangulation cache icinde vertex veya ucgen yok.";
+                result.error_message = "Triangulation cache contains no vertices or triangles.";
                 return result;
             }
 
@@ -1780,7 +1782,7 @@ private:
             }
 
             if (path.isEmpty()) {
-                result.error_message = "Triangulation cache'ten cizilebilir kenar cikmadi.";
+                result.error_message = "No drawable edges were produced from the triangulation cache.";
                 return result;
             }
 
@@ -1793,11 +1795,11 @@ private:
     }
 
     void handleTriangulationLayerFinished() {
-        setRenderBusy(false, "Hazir");
+        setRenderBusy(false, "Ready");
         const TriangulationLayerTaskResult result = triangulation_watcher_.result();
         if (!result.success) {
             QMessageBox::warning(this, "Triangle layer", QString::fromStdString(result.error_message));
-            appendStatus("Triangle layer hatasi: " + QString::fromStdString(result.error_message));
+            appendStatus("Triangle layer error: " + QString::fromStdString(result.error_message));
             return;
         }
 
@@ -1813,7 +1815,7 @@ private:
         scene_->addItem(item);
         triangulation_overlay_item_ = item;
 
-        appendStatus(QString("Triangle layer yuklendi: %1 ucgen, %2 benzersiz kenar")
+        appendStatus(QString("Triangle layer loaded: %1 triangles, %2 unique edges")
                          .arg(static_cast<qulonglong>(result.triangle_count))
                          .arg(static_cast<qulonglong>(result.edge_count)));
     }
@@ -1862,7 +1864,7 @@ private:
         auto* item = new QGraphicsSvgItem(svg_path);
         if (!item->renderer() || !item->renderer()->isValid()) {
             delete item;
-            QMessageBox::critical(this, "Onizleme hatasi", "SVG onizleme yuklenemedi.");
+            QMessageBox::critical(this, "Preview error", "Failed to load SVG preview.");
             return;
         }
         scene_->addItem(item);
@@ -1903,7 +1905,7 @@ private:
             zoom_history_.push_back(current_rect);
         }
         preview_view_->fitInView(target, Qt::KeepAspectRatio);
-        appendStatus(QString("Ctrl+Drag zoom uygulandi: w=%1 h=%2")
+        appendStatus(QString("Ctrl+Drag zoom applied: w=%1 h=%2")
                          .arg(target.width(), 0, 'f', 1)
                          .arg(target.height(), 0, 'f', 1));
     }
@@ -1914,7 +1916,7 @@ private:
         }
         if (zoom_history_.empty()) {
             fitPreview();
-            appendStatus("Sag tik: tum goruntuye donuldu");
+            appendStatus("Right click: returned to full view");
             return;
         }
 
@@ -1925,7 +1927,7 @@ private:
             return;
         }
         preview_view_->fitInView(previous, Qt::KeepAspectRatio);
-        appendStatus("Sag tik: bir onceki zoom seviyesine donuldu");
+        appendStatus("Right click: returned to previous zoom level");
     }
 
     void appendStatus(const QString& line) {
@@ -1949,9 +1951,9 @@ private:
 
             const bool ok = grab().save(screenshot_path);
             if (!ok) {
-                appendStatus("UI screenshot kaydedilemedi: " + screenshot_path);
+                appendStatus("Failed to save UI screenshot: " + screenshot_path);
             } else {
-                appendStatus("UI screenshot kaydedildi: " + screenshot_path);
+                appendStatus("UI screenshot saved: " + screenshot_path);
             }
             QTimer::singleShot(50, qApp, [ok]() { QCoreApplication::exit(ok ? 0 : 1); });
         });

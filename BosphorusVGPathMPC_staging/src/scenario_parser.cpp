@@ -196,6 +196,8 @@ void set_key_value(ScenarioSpec* s, const std::string& key_in, const std::string
   else if (key == "w_kcmd") s->cfg.w_Kcmd = parse_double(value);
   else if (key == "w_dkcmd") s->cfg.w_dKcmd = parse_double(value);
   else if (key == "w_ds_smooth") s->cfg.w_ds_smooth = parse_double(value);
+  else if (key == "w_ds_total") s->cfg.w_ds_total = parse_double(value);
+  else if (key == "w_k_mag") s->cfg.w_K_mag = parse_double(value);
   else if (key == "ds_jump_max") {
     auto v = parse_opt_double(value);
     s->cfg.ds_jump_max = v;
@@ -209,6 +211,8 @@ void set_key_value(ScenarioSpec* s, const std::string& key_in, const std::string
   else if (key == "w_prog") s->cfg.w_prog = parse_double(value);
   else if (key == "alpha_prog") s->cfg.alpha_prog = parse_double(value);
   else if (key == "hit_ratio") s->cfg.hit_ratio = parse_double(value);
+  else if (key == "direct_curvature_mode") s->cfg.direct_curvature_mode = parse_bool(value);
+  else if (key == "stage_track_weight") s->cfg.stage_track_weight = parse_double(value);
 
   else if (key == "x0") s->initial_state.x = parse_double(value);
   else if (key == "y0") s->initial_state.y = parse_double(value);

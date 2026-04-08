@@ -144,6 +144,78 @@ int findNearestForwardSample(const std::vector<ReferenceSample>& samples,
     return best_index;
 }
 
+int findNearestSampleGlobal(const std::vector<ReferenceSample>& samples, const State4& state) {
+    if (samples.empty()) {
+        return 0;
+    }
+
+    int best_index = 0;
+    double best_dist_sq = std::numeric_limits<double>::infinity();
+    for (int idx = 0; idx < static_cast<int>(samples.size()); ++idx) {
+        const double dx = state.x - samples[idx].x_km;
+        const double dy = state.y - samples[idx].y_km;
+        const double dist_sq = dx * dx + dy * dy;
+        if (dist_sq < best_dist_sq) {
+            best_dist_sq = dist_sq;
+            best_index = idx;
+        }
+    }
+    return best_index;
+}
+
+std::vector<State4> buildStageReferenceWindow(const std::vector<ReferenceSample>& samples,
+                                              int start_index,
+                                              int horizon) {
+    std::vector<State4> refs;
+    if (samples.empty()) {
+        return refs;
+    }
+
+    refs.reserve(horizon + 1);
+    const int last_index = static_cast<int>(samples.size()) - 1;
+    for (int k = 0; k <= horizon; ++k) {
+        const int ref_index = std::min(start_index + k, last_index);
+        const auto& ref = samples[ref_index];
+        refs.push_back(State4{ref.x_km, ref.y_km, ref.heading_rad, ref.curvature_per_km});
+    }
+
+    if (static_cast<int>(refs.size()) < horizon + 1) {
+        refs.resize(horizon + 1, refs.back());
+    }
+
+    if (start_index + horizon > last_index && !refs.empty()) {
+        double dx = std::cos(refs.back().psi);
+        double dy = std::sin(refs.back().psi);
+        if (refs.size() >= 2) {
+            const auto& a = refs[refs.size() - 2];
+            const auto& b = refs.back();
+            const double seg_dx = b.x - a.x;
+            const double seg_dy = b.y - a.y;
+            const double norm = std::hypot(seg_dx, seg_dy);
+            if (norm > 1e-9) {
+                dx = seg_dx / norm;
+                dy = seg_dy / norm;
+            }
+        }
+
+        const double step_km =
+            (refs.size() >= 2) ? std::max(std::hypot(refs.back().x - refs[refs.size() - 2].x,
+                                                     refs.back().y - refs[refs.size() - 2].y),
+                                          1e-6)
+                               : 1e-6;
+        for (int k = last_index - start_index + 1; k <= horizon; ++k) {
+            auto& ref = refs[k];
+            const auto& prev = refs[k - 1];
+            ref.x = prev.x + dx * step_km;
+            ref.y = prev.y + dy * step_km;
+            ref.psi = prev.psi;
+            ref.K = 0.0;
+        }
+    }
+
+    return refs;
+}
+
 RecedingLog trackReferenceSamples(MPCNumericClothoidCost& mpc,
                                   const std::vector<ReferenceSample>& samples,
                                   const ScenarioSpec& scenario,
@@ -154,9 +226,7 @@ RecedingLog trackReferenceSamples(MPCNumericClothoidCost& mpc,
     }
 
     const int last_index = static_cast<int>(samples.size()) - 1;
-    const int goal_ahead = std::max(4, scenario.cfg.N);
-    const int hit_ahead = std::max(2, scenario.cfg.N / 2);
-    const int search_ahead = std::max(goal_ahead * 3, 24);
+    const double stage_track_weight = scenario.cfg.stage_track_weight;
 
     log.start = scenario.initial_state;
     log.goal = State4{samples.back().x_km, samples.back().y_km, samples.back().heading_rad, 0.0};
@@ -176,33 +246,25 @@ RecedingLog trackReferenceSamples(MPCNumericClothoidCost& mpc,
     std::optional<double> ds_seed = std::nullopt;
 
     for (int iter = 0; iter < scenario.opts.max_iters; ++iter) {
-        current_index = findNearestForwardSample(samples, state, current_index, search_ahead);
-
-        const int goal_index = std::min(current_index + goal_ahead, last_index);
-        const int hit_index = std::min(current_index + hit_ahead, last_index);
-        const bool is_final_window = goal_index >= last_index;
-
-        const auto& goal_sample = samples[goal_index];
-        const auto& hit_sample = samples[hit_index];
-        const double goal_k = scenario.opts.use_wp_kf ? goal_sample.curvature_per_km : scenario.opts.kf_fallback;
-        const double hit_k = scenario.opts.use_wp_kf ? hit_sample.curvature_per_km : scenario.opts.kf_fallback;
-        const double term_scale = is_final_window ? scenario.opts.term_scale_final : scenario.opts.term_scale_intermediate;
-        const double w_wp = is_final_window ? scenario.opts.w_wp_final : scenario.opts.w_wp_intermediate;
-        const double hit_scale = is_final_window ? 0.0 : scenario.opts.hit_scale_intermediate;
+        current_index = findNearestSampleGlobal(samples, state);
+        const auto stage_refs = buildStageReferenceWindow(samples, current_index, scenario.cfg.N);
+        const auto& goal_ref = stage_refs.back();
 
         const auto t0 = std::chrono::steady_clock::now();
         StepOutput step = mpc.mpc_step(state,
-                                       State4{goal_sample.x_km, goal_sample.y_km, goal_sample.heading_rad, goal_k},
-                                       term_scale,
-                                       w_wp,
-                                       goal_sample.x_km,
-                                       goal_sample.y_km,
-                                       hit_scale,
-                                       hit_sample.x_km,
-                                       hit_sample.y_km,
-                                       hit_sample.heading_rad,
-                                       hit_k,
-                                       ds_seed);
+                                       goal_ref,
+                                       0.0,
+                                       0.0,
+                                       std::nullopt,
+                                       std::nullopt,
+                                       0.0,
+                                       std::nullopt,
+                                       std::nullopt,
+                                       std::nullopt,
+                                       std::nullopt,
+                                       ds_seed,
+                                       &stage_refs,
+                                       stage_track_weight);
         const auto t1 = std::chrono::steady_clock::now();
         log.solve_time_s.push_back(std::chrono::duration<double>(t1 - t0).count());
 

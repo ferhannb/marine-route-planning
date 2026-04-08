@@ -46,6 +46,8 @@ struct MPCConfig {
   double w_Kcmd = 0.5;
   double w_dKcmd = 2.0;
   double w_ds_smooth = 1.0;
+  double w_ds_total = 0.0;
+  double w_K_mag = 0.0;
   std::optional<double> ds_jump_max;
   double w_Kf = 10.0;
   bool enable_terminal_K_hard = false;
@@ -59,6 +61,8 @@ struct MPCConfig {
   double w_prog = 0.0;
   double alpha_prog = 0.0;
   double hit_ratio = 0.7;
+  bool direct_curvature_mode = false;
+  double stage_track_weight = 0.02;
 };
 
 struct MPCSolution {
@@ -143,7 +147,9 @@ class MPCNumericClothoidCost {
       std::optional<double> Khit = std::nullopt,
       std::optional<double> ds_prev = std::nullopt,
       std::optional<double> ds_seed = std::nullopt,
-      bool use_last_warm = true);
+      bool use_last_warm = true,
+      const std::vector<State4>* stage_refs = nullptr,
+      double stage_track_weight = 0.0);
 
   StepOutput mpc_step(
       const State4& state,
@@ -157,7 +163,9 @@ class MPCNumericClothoidCost {
       std::optional<double> yhit = std::nullopt,
       std::optional<double> psihit = std::nullopt,
       std::optional<double> Khit = std::nullopt,
-      std::optional<double> ds_seed = std::nullopt);
+      std::optional<double> ds_seed = std::nullopt,
+      const std::vector<State4>* stage_refs = nullptr,
+      double stage_track_weight = 0.0);
 
   RecedingLog run_receding_horizon_multi(
       const std::vector<Waypoint>& waypoints,
@@ -204,9 +212,13 @@ class MPCNumericClothoidCost {
   casadi::MX hit_scale_p_;
   casadi::MX ds_prev_p_;
   casadi::MX term_scale_p_;
+  casadi::MX stage_track_weight_p_;
   casadi::MX w_wp_p_;
   casadi::MX xwp_p_;
   casadi::MX ywp_p_;
+  casadi::MX xref_p_;
+  casadi::MX yref_p_;
+  casadi::MX psiref_p_;
 
   std::optional<MPCSolution> last_sol_;
   WarmStartData last_warm_;
@@ -281,7 +293,9 @@ class MPCNumericClothoidCost {
       double psihit,
       double Khit,
       double hit_scale,
-      double ds_prev);
+      double ds_prev,
+      const std::vector<State4>* stage_refs,
+      double stage_track_weight);
 
   void warm_start(
       double x0,

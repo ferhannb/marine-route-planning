@@ -974,6 +974,7 @@ void writeSvgPlot(const std::string& file_path,
     auto mapY = [&](double lat) { return oy + (max_lat - lat) * scale; };
 
     const bool has_navigation_overlay = !triangles.empty() || !tri_sequence.empty() || !route.empty();
+    const bool is_mpc_svg = file_path.find("mpc") != std::string::npos;
     const bool dense_land_dataset = land_polygons.size() > 5000;
     // Navigation SVG'lerinde triangulation ustunde gercek coastline'i gorebilmek icin
     // kara polygon vertex'lerini artik piksel bazinda seyreltmiyoruz.
@@ -1184,11 +1185,14 @@ void writeSvgPlot(const std::string& file_path,
     }
 
     if (route.size() >= 2) {
+        const char* route_stroke = is_mpc_svg ? "#111111" : "#084c97";
+        const char* route_dash = is_mpc_svg ? " stroke-dasharray=\"10 7\"" : "";
         out << "<polyline points=\"";
         for (const auto& p : route) {
             out << mapX(p.lon_deg) << "," << mapY(p.lat_deg) << " ";
         }
-        out << "\" fill=\"none\" stroke=\"#084c97\" stroke-width=\"3.2\" stroke-opacity=\"0.72\" stroke-linecap=\"round\"/>\n";
+        out << "\" fill=\"none\" stroke=\"" << route_stroke
+            << "\" stroke-width=\"3.2\" stroke-opacity=\"0.72\" stroke-linecap=\"round\"" << route_dash << "/>\n";
     }
 
     if (!route.empty()) {
@@ -1200,10 +1204,17 @@ void writeSvgPlot(const std::string& file_path,
             << "\" r=\"6\" fill=\"#b42318\"/>\n";
     }
 
-    const double legend_height = 120.0;
+    const double legend_height = is_mpc_svg ? 132.0 : 120.0;
     out << "<rect x=\"22\" y=\"20\" width=\"760\" height=\"" << legend_height
         << "\" rx=\"8\" fill=\"#ffffff\" stroke=\"#9fb3c8\"/>\n";
-    if (has_navigation_overlay) {
+    if (is_mpc_svg) {
+        out << "<text x=\"38\" y=\"48\" font-family=\"monospace\" font-size=\"18\" fill=\"#102a43\">"
+            << "Bosphorus MPC Tracking Output</text>\n";
+        out << "<text x=\"38\" y=\"74\" font-family=\"monospace\" font-size=\"14\" fill=\"#334e68\">"
+            << "Black dashed: MPC tracked route | Green/Red: start and finish</text>\n";
+        out << "<text x=\"38\" y=\"100\" font-family=\"monospace\" font-size=\"14\" fill=\"#334e68\">"
+            << "Gray: triangle mesh | Brown: land | Blue shades: bathymetry | Teal/Orange/Cyan: OSM TSS</text>\n";
+    } else if (has_navigation_overlay) {
         out << "<text x=\"38\" y=\"48\" font-family=\"monospace\" font-size=\"18\" fill=\"#102a43\">"
             << "CDT-style Triangle Search + Funnel Refinement</text>\n";
         out << "<text x=\"38\" y=\"74\" font-family=\"monospace\" font-size=\"14\" fill=\"#334e68\">"
