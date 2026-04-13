@@ -38,7 +38,7 @@ Desktop UI:
 ./build/world_layers_desktop
 ```
 
-![World Layers Desktop UI](doc/images/world-layers-desktop-ui.png)
+![World Layers Desktop UI](doc/images/world-layers-desktop-ui-updated.png)
 
 This executable:
 - loads world land polygons (`dataset/ne_10m_land.geojson`),
